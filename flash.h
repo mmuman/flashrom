@@ -113,12 +113,13 @@ enum write_granularity {
 #define FEATURE_EITHER_RESET	FEATURE_LONG_RESET
 #define FEATURE_RESET_MASK	(FEATURE_LONG_RESET | FEATURE_SHORT_RESET)
 #define FEATURE_ADDR_SHIFTED	(1 << 5)
+#define FEATURE_SLOW_ERASE_CMDS	(1 << 6)
 /* Feature bits used for SPI only */
-#define FEATURE_WRSR_EWSR	(1 << 6)
-#define FEATURE_WRSR_WREN	(1 << 7)
+#define FEATURE_WRSR_EWSR	(1 << 8)
+#define FEATURE_WRSR_WREN	(1 << 9)
 #define FEATURE_WRSR_EITHER	(FEATURE_WRSR_EWSR | FEATURE_WRSR_WREN)
-#define FEATURE_OTP		(1 << 8)
-#define FEATURE_QPI		(1 << 9)
+#define FEATURE_OTP		(1 << 10)
+#define FEATURE_QPI		(1 << 11)
 
 enum test_state {
 	OK = 0,
@@ -161,7 +162,7 @@ struct flashchip {
 	unsigned int total_size;
 	/* Chip page size in bytes */
 	unsigned int page_size;
-	int feature_bits;
+	uint16_t feature_bits;
 
 	/* Indicate how well flashrom supports different operations of this flash chip. */
 	struct tested {
@@ -172,11 +173,6 @@ struct flashchip {
 	} tested;
 
 	int (*probe) (struct flashctx *flash);
-
-	/* Delay after "enter/exit ID mode" commands in microseconds.
-	 * NB: negative values have special meanings, see TIMING_* below.
-	 */
-	signed int probe_timing;
 
 	/*
 	 * Erase blocks and associated erase function. Any chip erase function
@@ -213,16 +209,6 @@ struct flashctx {
 	chipaddr virtual_registers;
 	struct registered_programmer *pgm;
 };
-
-/* Timing used in probe routines. ZERO is -2 to differentiate between an unset
- * field and zero delay.
- * 
- * SPI devices will always have zero delay and ignore this field.
- */
-#define TIMING_FIXME	-1
-/* this is intentionally same value as fixme */
-#define TIMING_IGNORED	-1
-#define TIMING_ZERO	-2
 
 extern const struct flashchip flashchips[];
 extern const unsigned int flashchips_size;

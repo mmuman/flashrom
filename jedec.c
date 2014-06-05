@@ -120,60 +120,46 @@ static void start_program_jedec_common(const struct flashctx *flash, unsigned in
 	chip_writeb(flash, 0xA0, bios + (0x5555 & mask));
 }
 
-static int probe_jedec_common(struct flashctx *flash, unsigned int mask)
+int probe_jedec(struct flashctx *flash)
 {
+	unsigned int delay = 10000;
 	chipaddr bios = flash->virtual_memory;
 	const struct flashchip *chip = flash->chip;
+	const unsigned int mask = getaddrmask(flash->chip);
 	uint8_t id1, id2;
 	uint32_t largeid1, largeid2;
 	uint32_t flashcontent1, flashcontent2;
-	unsigned int probe_timing_enter, probe_timing_exit;
-
-	if (chip->probe_timing > 0)
-		probe_timing_enter = probe_timing_exit = chip->probe_timing;
-	else if (chip->probe_timing == TIMING_ZERO) { /* No delay. */
-		probe_timing_enter = probe_timing_exit = 0;
-	} else if (chip->probe_timing == TIMING_FIXME) { /* == _IGNORED */
-		msg_cdbg("Chip lacks correct probe timing information, "
-			     "using default 10mS/40uS. ");
-		probe_timing_enter = 10000;
-		probe_timing_exit = 40;
-	} else {
-		msg_cerr("Chip has negative value in probe_timing, failing "
-		       "without chip access\n");
-		return 0;
-	}
 
 	/* Earlier probes might have been too fast for the chip to enter ID
 	 * mode completely. Allow the chip to finish this before seeing a
 	 * reset command.
 	 */
-	if (probe_timing_enter)
-		programmer_delay(probe_timing_enter);
+	if (delay)
+		programmer_delay(delay);
 	/* Reset chip to a clean slate */
 	if ((chip->feature_bits & FEATURE_RESET_MASK) == FEATURE_LONG_RESET)
 	{
 		chip_writeb(flash, 0xAA, bios + (0x5555 & mask));
-		if (probe_timing_exit)
+		if (delay)
 			programmer_delay(10);
 		chip_writeb(flash, 0x55, bios + (0x2AAA & mask));
-		if (probe_timing_exit)
+		if (delay)
 			programmer_delay(10);
 	}
 	chip_writeb(flash, 0xF0, bios + (0x5555 & mask));
-	if (probe_timing_exit)
-		programmer_delay(probe_timing_exit);
+	if (delay)
+		programmer_delay(delay);
 
 	/* Issue JEDEC Product ID Entry command */
 	chip_writeb(flash, 0xAA, bios + (0x5555 & mask));
-	if (probe_timing_enter)
+	if (delay)
 		programmer_delay(10);
 	chip_writeb(flash, 0x55, bios + (0x2AAA & mask));
-	if (probe_timing_enter)
+	if (delay)
 		programmer_delay(10);
 	chip_writeb(flash, 0x90, bios + (0x5555 & mask));
-	if (probe_timing_enter)
-		programmer_delay(probe_timing_enter);
+	if (delay)
+		programmer_delay(delay);
 
 	/* Read product ID */
 	id1 = chip_readb(flash, bios);
@@ -197,15 +183,15 @@ static int probe_jedec_common(struct flashctx *flash, unsigned int mask)
 	if ((chip->feature_bits & FEATURE_RESET_MASK) == FEATURE_LONG_RESET)
 	{
 		chip_writeb(flash, 0xAA, bios + (0x5555 & mask));
-		if (probe_timing_exit)
+		if (delay)
 			programmer_delay(10);
 		chip_writeb(flash, 0x55, bios + (0x2AAA & mask));
-		if (probe_timing_exit)
+		if (delay)
 			programmer_delay(10);
 	}
 	chip_writeb(flash, 0xF0, bios + (0x5555 & mask));
-	if (probe_timing_exit)
-		programmer_delay(probe_timing_exit);
+	if (delay)
+		programmer_delay(delay);
 
 	msg_cdbg("%s: id1 0x%02x, id2 0x%02x", __func__, largeid1, largeid2);
 	if (!oddparity(id1))
@@ -245,7 +231,7 @@ static int erase_sector_jedec_common(struct flashctx *flash, unsigned int page,
 {
 	chipaddr bios = flash->virtual_memory;
 	unsigned int delay_us = 0;
-	if(flash->chip->probe_timing != TIMING_ZERO)
+	if (flash->chip->feature_bits & FEATURE_SLOW_ERASE_CMDS)
 		delay_us = 10;
 
 	/*  Issue the Sector Erase command   */
@@ -275,7 +261,7 @@ static int erase_block_jedec_common(struct flashctx *flash, unsigned int block,
 {
 	chipaddr bios = flash->virtual_memory;
 	unsigned int delay_us = 0;
-	if(flash->chip->probe_timing != TIMING_ZERO)
+	if (flash->chip->feature_bits & FEATURE_SLOW_ERASE_CMDS)
 		delay_us = 10;
 
 	/*  Issue the Sector Erase command   */
@@ -304,7 +290,7 @@ static int erase_chip_jedec_common(struct flashctx *flash, unsigned int mask)
 {
 	chipaddr bios = flash->virtual_memory;
 	unsigned int delay_us = 0;
-	if(flash->chip->probe_timing != TIMING_ZERO)
+	if (flash->chip->feature_bits & FEATURE_SLOW_ERASE_CMDS)
 		delay_us = 10;
 
 	/*  Issue the JEDEC Chip Erase command   */
@@ -475,14 +461,6 @@ int erase_chip_block_jedec(struct flashctx *flash, unsigned int addr,
 		return -1;
 	}
 	return erase_chip_jedec_common(flash, mask);
-}
-
-int probe_jedec(struct flashctx *flash)
-{
-	unsigned int mask;
-
-	mask = getaddrmask(flash->chip);
-	return probe_jedec_common(flash, mask);
 }
 
 int erase_sector_jedec(struct flashctx *flash, unsigned int page,
