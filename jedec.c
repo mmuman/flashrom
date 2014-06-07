@@ -220,9 +220,6 @@ int probe_jedec(struct flashctx *flash)
 	if (largeid1 != chip->manufacture_id || largeid2 != chip->model_id)
 		return 0;
 
-	if (chip->feature_bits & FEATURE_REGISTERMAP)
-		map_flash_registers(flash);
-
 	return 1;
 }
 

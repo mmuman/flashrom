@@ -239,7 +239,6 @@ extern int verbose_screen;
 extern int verbose_logfile;
 extern const char flashrom_version[];
 extern const char *chip_to_probe;
-void map_flash_registers(struct flashctx *flash);
 int read_memmapped(struct flashctx *flash, uint8_t *buf, unsigned int start, unsigned int len);
 int erase_flash(struct flashctx *flash);
 int probe_flash(struct registered_programmer *pgm, int startchip, struct flashctx *fill_flash, int force);

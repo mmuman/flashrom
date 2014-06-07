@@ -82,8 +82,6 @@ static int probe_82802ab(struct flashctx *flash, bool shifted)
 	if (id1 != flash->chip->manufacture_id || id2 != flash->chip->model_id)
 		return 0;
 
-	if (flash->chip->feature_bits & FEATURE_REGISTERMAP)
-		map_flash_registers(flash);
 
 	return 1;
 }

@@ -519,12 +519,23 @@ void programmer_delay(unsigned int usecs)
 		programmer_table[programmer].delay(usecs);
 }
 
-void map_flash_registers(struct flashctx *flash)
+int map_flash_registers(struct flashctx *flash)
 {
 	size_t size = flash->chip->total_size * 1024;
 	/* Flash registers live 4 MByte below the flash. */
-	/* FIXME: This is incorrect for nonstandard flashbase. */
-	flash->virtual_registers = (chipaddr)programmer_map_flash_region("flash chip registers", (0xFFFFFFFF - 0x400000 - size + 1), size);
+	uintptr_t base = flashbase ? flashbase : (0xffffffff - size + 1);
+	if (base < 0x400000) {
+		msg_perr("Base address is too low to map flash registers.");
+		return 1;
+	}
+	base -= 0x400000;
+	void *addr = programmer_map_flash_region("flash chip registers", base, size);
+	if (addr == ERROR_PTR) {
+		msg_perr("Could not map flash chip registers.\n");
+		return 1;
+	}
+	flash->virtual_registers = (chipaddr)addr;
+	return 0;
 }
 
 int read_memmapped(struct flashctx *flash, uint8_t *buf, unsigned int start,
@@ -1038,11 +1049,45 @@ unsigned int count_max_decode_exceedings(struct flashctx *flash)
 	return limitexceeded;
 }
 
+void unmap_flash(struct flashctx *flash)
+{
+	if (flash->chip->bustype & (BUS_PARALLEL | BUS_LPC | BUS_FWH)) {
+		programmer_unmap_flash_region((void *)flash->virtual_memory, flash->chip->total_size);
+		flash->virtual_memory = 0;
+
+		if (flash->chip->feature_bits & FEATURE_REGISTERMAP && flash->virtual_registers != 0) {
+			programmer_unmap_flash_region((void *)flash->virtual_registers, flash->chip->total_size * 1024);
+			flash->virtual_registers = 0;
+		}
+	}
+}
+
+int map_flash(struct flashctx *flash)
+{
+	const unsigned long size = flash->chip->total_size;
+	if (flash->chip->bustype & (BUS_PARALLEL | BUS_LPC | BUS_FWH)) {
+		uintptr_t base = flashbase ? flashbase : (0xffffffff - size + 1);
+		void *addr = programmer_map_flash_region("flash chip", base, size);
+		if (addr == ERROR_PTR) {
+			msg_perr("Could not map flash chip registers.\n");
+			return 1;
+		}
+		flash->virtual_memory = (chipaddr)addr;
+
+		if (flash->chip->feature_bits & FEATURE_REGISTERMAP) {
+			if (map_flash_registers(flash) != 0) {
+				unmap_flash(flash);
+				return 1;
+			}
+		}
+	}
+
+	return 0;
+}
+
 int probe_flash(struct registered_programmer *pgm, int startchip, struct flashctx *flash, int force)
 {
 	const struct flashchip *chip;
-	unsigned long base = 0;
-	char location[64];
 	uint32_t size;
 	enum chipbustype buses_common;
 	char *tmp;
@@ -1068,10 +1113,10 @@ int probe_flash(struct registered_programmer *pgm, int startchip, struct flashct
 		memcpy(flash->chip, chip, sizeof(struct flashchip));
 		flash->pgm = pgm;
 
-		size = chip->total_size * 1024;
-		base = flashbase ? flashbase : (0xffffffff - size + 1);
-		flash->virtual_memory = (chipaddr)programmer_map_flash_region("flash chip", base, size);
+		if (map_flash(flash) != 0)
+			return -1;
 
+		size = chip->total_size * 1024;
 		/* We handle a forced match like a real match, we just avoid probing. Note that probe_flash()
 		 * is only called with force=1 after normal probing failed.
 		 */
@@ -1119,8 +1164,7 @@ int probe_flash(struct registered_programmer *pgm, int startchip, struct flashct
 			break;
 		/* Not the first flash chip detected on this bus, and it's just a generic match. Ignore it. */
 notfound:
-		programmer_unmap_flash_region((void *)flash->virtual_memory, size);
-		flash->virtual_memory = (chipaddr)NULL;
+		unmap_flash(flash);
 		free(flash->chip);
 		flash->chip = NULL;
 	}
@@ -1128,16 +1172,9 @@ notfound:
 	if (!flash->chip)
 		return -1;
 
-#if CONFIG_INTERNAL == 1
-	if (programmer_table[programmer].map_flash_region == physmap)
-		snprintf(location, sizeof(location), "at physical address 0x%lx", base);
-	else
-#endif
-		snprintf(location, sizeof(location), "on %s", programmer_table[programmer].name);
-
 	tmp = flashbuses_to_text(flash->chip->bustype);
-	msg_cinfo("%s %s flash chip \"%s\" (%d kB, %s) %s.\n", force ? "Assuming" : "Found",
-		  flash->chip->vendor, flash->chip->name, flash->chip->total_size, tmp, location);
+	msg_cinfo("%s %s flash chip \"%s\" (%d kB, %s).\n", force ? "Assuming" : "Found",
+		  flash->chip->vendor, flash->chip->name, flash->chip->total_size, tmp);
 	free(tmp);
 
 	/* Flash registers will not be mapped if the chip was forced. Lock info
@@ -1858,7 +1895,8 @@ int doit(struct flashctx *flash, int force, const char *filename, int read_it,
 		flash->chip->unlock(flash);
 
 	if (read_it) {
-		return read_flash_to_file(flash, filename);
+		ret = read_flash_to_file(flash, filename);
+		goto unmap;
 	}
 
 	oldcontents = malloc(size);
@@ -1977,5 +2015,7 @@ int doit(struct flashctx *flash, int force, const char *filename, int read_it,
 out:
 	free(oldcontents);
 	free(newcontents);
+unmap:
+	unmap_flash(flash);
 	return ret;
 }
