@@ -40,11 +40,10 @@ void print_status_82802ab(uint8_t status)
 	msg_cdbg("%s", status & 0x2 ? "WP|TBL#|WP#,ABORT:" : "UNLOCK:");
 }
 
-int probe_82802ab(struct flashctx *flash)
+static int probe_82802ab(struct flashctx *flash, bool shifted)
 {
 	chipaddr bios = flash->virtual_memory;
 	uint8_t id1, id2, flashcontent1, flashcontent2;
-	int shifted = (flash->chip->feature_bits & FEATURE_ADDR_SHIFTED) != 0;
 
 	/* Reset to get a clean state */
 	chip_writeb(flash, 0xFF, bios);
@@ -87,6 +86,16 @@ int probe_82802ab(struct flashctx *flash)
 		map_flash_registers(flash);
 
 	return 1;
+}
+
+int probe_82802ab_shifted(struct flashctx *flash)
+{
+	return probe_82802ab(flash, true);
+}
+
+int probe_82802ab_unshifted(struct flashctx *flash)
+{
+	return probe_82802ab(flash, false);
 }
 
 /* FIXME: needs timeout */

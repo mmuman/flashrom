@@ -112,8 +112,7 @@ enum write_granularity {
 #define FEATURE_SHORT_RESET	(1 << 4)
 #define FEATURE_EITHER_RESET	FEATURE_LONG_RESET
 #define FEATURE_RESET_MASK	(FEATURE_LONG_RESET | FEATURE_SHORT_RESET)
-#define FEATURE_ADDR_SHIFTED	(1 << 5)
-#define FEATURE_SLOW_ERASE_CMDS	(1 << 6)
+#define FEATURE_SLOW_ERASE_CMDS	(1 << 5)
 /* Feature bits used for SPI only */
 #define FEATURE_WRSR_EWSR	(1 << 8)
 #define FEATURE_WRSR_WREN	(1 << 9)

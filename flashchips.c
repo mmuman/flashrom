@@ -2962,7 +2962,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0, /* unused */
 		.feature_bits	= FEATURE_REGISTERMAP, /* TODO: LPC OK too? */
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab, /* TODO: 0xff cmd not documented? */
+		.probe		= probe_82802ab_unshifted, /* TODO: 0xff cmd not documented? */
 		.block_erasers	=
 		{
 			{
@@ -5647,7 +5647,7 @@ const struct flashchip flashchips[] = {
 		.total_size	= 256,
 		.page_size	= 256 * 1024,
 		.tested		= TEST_OK_PRE,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -5673,7 +5673,7 @@ const struct flashchip flashchips[] = {
 		.total_size	= 512,
 		.page_size	= 256,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -5695,7 +5695,7 @@ const struct flashchip flashchips[] = {
 		.total_size	= 512,
 		.page_size	= 128 * 1024, /* maximal block size */
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -5721,7 +5721,7 @@ const struct flashchip flashchips[] = {
 		.total_size	= 512,
 		.page_size	= 128 * 1024, /* maximal block size */
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -5746,9 +5746,8 @@ const struct flashchip flashchips[] = {
 		.model_id	= INTEL_28F400B,
 		.total_size	= 512,
 		.page_size	= 128 * 1024, /* maximal block size */
-		.feature_bits	= FEATURE_ADDR_SHIFTED,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_shifted,
 		.block_erasers	=
 		{
 			{
@@ -5773,9 +5772,8 @@ const struct flashchip flashchips[] = {
 		.model_id	= INTEL_28F400T,
 		.total_size	= 512,
 		.page_size	= 128 * 1024, /* maximal block size */
-		.feature_bits	= FEATURE_ADDR_SHIFTED,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_shifted,
 		.block_erasers	=
 		{
 			{
@@ -5802,7 +5800,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 64 * 1024,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_OK_PREW,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -5826,7 +5824,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 64 * 1024,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_OK_PR,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -9127,7 +9125,7 @@ const struct flashchip flashchips[] = {
 		.total_size	= 1024,
 		.page_size	= 64 * 1024,
 		.tested		= TEST_OK_PREW,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -9157,7 +9155,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 64 * 1024,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -10199,7 +10197,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 256,
 		.feature_bits	= 0,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -10651,7 +10649,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 4 * 1024,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -10714,7 +10712,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 4 * 1024,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -10746,7 +10744,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 4 * 1024,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_OK_PREW,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -10924,7 +10922,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 4 * 1024,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_OK_PRE,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11180,7 +11178,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11212,7 +11210,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11244,7 +11242,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_OK_PRE,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11276,7 +11274,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11308,7 +11306,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11337,7 +11335,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11361,7 +11359,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_OK_PR,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11385,7 +11383,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_OK_PREW,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11409,7 +11407,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
@@ -11433,7 +11431,7 @@ const struct flashchip flashchips[] = {
 		.page_size	= 0,
 		.feature_bits	= FEATURE_REGISTERMAP,
 		.tested		= TEST_UNTESTED,
-		.probe		= probe_82802ab,
+		.probe		= probe_82802ab_unshifted,
 		.block_erasers	=
 		{
 			{
