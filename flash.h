@@ -104,14 +104,14 @@ enum write_granularity {
 /* Feature bits used for non-SPI only */
 #define FEATURE_REGISTERMAP	(1 << 0)
 #define FEATURE_BYTEWRITES	(1 << 1)
+#define FEATURE_ADDR_FULL	(0 << 2)
+#define FEATURE_ADDR_2AA	(1 << 2)
+#define FEATURE_ADDR_AAA	(2 << 2)
+#define FEATURE_ADDR_MASK	(3 << 2)
 #define FEATURE_LONG_RESET	(0 << 4)
 #define FEATURE_SHORT_RESET	(1 << 4)
 #define FEATURE_EITHER_RESET	FEATURE_LONG_RESET
 #define FEATURE_RESET_MASK	(FEATURE_LONG_RESET | FEATURE_SHORT_RESET)
-#define FEATURE_ADDR_FULL	(0 << 2)
-#define FEATURE_ADDR_MASK	(3 << 2)
-#define FEATURE_ADDR_2AA	(1 << 2)
-#define FEATURE_ADDR_AAA	(2 << 2)
 #define FEATURE_ADDR_SHIFTED	(1 << 5)
 /* Feature bits used for SPI only */
 #define FEATURE_WRSR_EWSR	(1 << 6)
