@@ -119,7 +119,7 @@ struct registered_programmer registered_programmers[PROGRAMMERS_MAX];
 int registered_programmer_count = 0;
 
 /* This function copies the struct registered_programmer parameter. */
-int register_programmer(struct registered_programmer *pgm)
+int register_programmer(const struct registered_programmer *pgm)
 {
 	if (registered_programmer_count >= PROGRAMMERS_MAX) {
 		msg_perr("Tried to register more than %i programmer "

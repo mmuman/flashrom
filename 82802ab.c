@@ -40,10 +40,9 @@ void print_status_82802ab(uint8_t status)
 	msg_cdbg("%s", status & 0x2 ? "WP|TBL#|WP#,ABORT:" : "UNLOCK:");
 }
 
-static int probe_82802ab(struct flashctx *flash, bool shifted)
+static int probe_82802ab(struct flashctx *flash, struct probe_res *res, bool shifted)
 {
 	chipaddr bios = flash->virtual_memory;
-	uint8_t id1, id2, flashcontent1, flashcontent2;
 
 	/* Reset to get a clean state */
 	chip_writeb(flash, 0xFF, bios);
@@ -53,47 +52,37 @@ static int probe_82802ab(struct flashctx *flash, bool shifted)
 	chip_writeb(flash, 0x90, bios);
 	programmer_delay(10);
 
-	id1 = chip_readb(flash, bios + (0x00 << shifted));
-	id2 = chip_readb(flash, bios + (0x01 << shifted));
+#if (NUM_PROBE_BYTES < 2)
+#error probe_82802ab requires NUM_PROBE_BYTES to be at least 2.
+#endif
+	res->vals[0] = chip_readb(flash, bios + (0x00 << shifted));
+	res->vals[1] = chip_readb(flash, bios + (0x01 << shifted));
 
 	/* Leave ID mode */
 	chip_writeb(flash, 0xFF, bios);
 
 	programmer_delay(10);
 
-	msg_cdbg("%s: id1 0x%02x, id2 0x%02x", __func__, id1, id2);
-
-	if (!oddparity(id1))
-		msg_cdbg(", id1 parity violation");
-
-	/*
-	 * Read the product ID location again. We should now see normal
-	 * flash contents.
-	 */
-	flashcontent1 = chip_readb(flash, bios + (0x00 << shifted));
-	flashcontent2 = chip_readb(flash, bios + (0x01 << shifted));
-
-	if (id1 == flashcontent1)
-		msg_cdbg(", id1 is normal flash content");
-	if (id2 == flashcontent2)
-		msg_cdbg(", id2 is normal flash content");
-
-	msg_cdbg("\n");
-	if (id1 != flash->chip->manufacture_id || id2 != flash->chip->model_id)
+	uint8_t cont[2];
+	cont[0] = chip_readb(flash, bios + (0x00 << shifted));
+	cont[1] = chip_readb(flash, bios + (0x01 << shifted));
+	if (test_for_valid_ids(res->vals, cont, 2)) {
+		res->len = 2;
+		return 1;
+	} else {
+		res->len = 0;
 		return 0;
-
-
-	return 1;
+	}
 }
 
-int probe_82802ab_shifted(struct flashctx *flash)
+int probe_82802ab_shifted(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2)
 {
-	return probe_82802ab(flash, true);
+	return probe_82802ab(flash, res, true);
 }
 
-int probe_82802ab_unshifted(struct flashctx *flash)
+int probe_82802ab_unshifted(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2)
 {
-	return probe_82802ab(flash, false);
+	return probe_82802ab(flash, res, false);
 }
 
 /* FIXME: needs timeout */

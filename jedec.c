@@ -38,6 +38,30 @@ uint8_t oddparity(uint8_t val)
 	return (val ^ (val >> 1)) & 0x1;
 }
 
+/* Looks for values in a different from all zeroes and all ones. If b is non-null test_for_valid_ids
+ * additionally compares bytes in a and b respectively. Can be be used on values read before and after exiting
+ * ID mode: Unequal values indicate with high certainty that the write commands enabling and disabling ID mode
+ * were received and understood by the chip. */
+bool test_for_valid_ids(uint8_t *a, uint8_t *b, unsigned int len)
+{
+	unsigned int i;
+	bool equal = true;
+	bool valid = false;
+	for (i = 0; i < len; i++) {
+		if (b != NULL) {
+			if (a[i] != b[i])
+				equal = false;
+			else
+				msg_cspew("Byte #%d is equal (0x%02x).\n", i, a[i]);
+		}
+		if (a[i] != 0x00 && a[i] != 0xFF)
+			valid = true;
+	}
+	if (b != NULL && equal && valid)
+		msg_cdbg("IDs are equal to normal flash content.");
+	return valid;
+}
+
 static void toggle_ready_jedec_common(const struct flashctx *flash, chipaddr dst, unsigned int delay)
 {
 	unsigned int i = 0;
@@ -120,15 +144,10 @@ static void start_program_jedec_common(const struct flashctx *flash, unsigned in
 	chip_writeb(flash, 0xA0, bios + (0x5555 & mask));
 }
 
-int probe_jedec(struct flashctx *flash)
+static int probe_jedec(struct flashctx *flash, struct probe_res *res, unsigned int mask, bool long_reset)
 {
 	unsigned int delay = 10000;
 	chipaddr bios = flash->virtual_memory;
-	const struct flashchip *chip = flash->chip;
-	const unsigned int mask = getaddrmask(flash->chip);
-	uint8_t id1, id2;
-	uint32_t largeid1, largeid2;
-	uint32_t flashcontent1, flashcontent2;
 
 	/* Earlier probes might have been too fast for the chip to enter ID
 	 * mode completely. Allow the chip to finish this before seeing a
@@ -137,7 +156,7 @@ int probe_jedec(struct flashctx *flash)
 	if (delay)
 		programmer_delay(delay);
 	/* Reset chip to a clean slate */
-	if ((chip->feature_bits & FEATURE_RESET_MASK) == FEATURE_LONG_RESET)
+	if (long_reset)
 	{
 		chip_writeb(flash, 0xAA, bios + (0x5555 & mask));
 		if (delay)
@@ -161,26 +180,25 @@ int probe_jedec(struct flashctx *flash)
 	if (delay)
 		programmer_delay(delay);
 
-	/* Read product ID */
-	id1 = chip_readb(flash, bios);
-	id2 = chip_readb(flash, bios + 0x01);
-	largeid1 = id1;
-	largeid2 = id2;
-
-	/* Check if it is a continuation ID, this should be a while loop. */
-	if (id1 == 0x7F) {
-		largeid1 <<= 8;
-		id1 = chip_readb(flash, bios + 0x100);
-		largeid1 |= id1;
+#if (NUM_PROBE_BYTES < 4)
+#error probe_jedec requires NUM_PROBE_BYTES to be at least 4.
+#endif
+	unsigned int idx = 0;
+	/* Read manufacturer ID */
+	res->vals[idx++] = chip_readb(flash, bios);
+	/* Check if it is a continuation ID, this (and the one below) should be a while loop. */
+	if (res->vals[idx] == 0x7F) {
+		res->vals[idx++] = chip_readb(flash, bios + 0x100);
 	}
-	if (id2 == 0x7F) {
-		largeid2 <<= 8;
-		id2 = chip_readb(flash, bios + 0x101);
-		largeid2 |= id2;
+
+	/* Read model ID */
+	res->vals[idx++] = chip_readb(flash, bios + 0x01);
+	if (res->vals[idx] == 0x7F) {
+		res->vals[idx++] = chip_readb(flash, bios + 0x101);
 	}
 
 	/* Issue JEDEC Product ID Exit command */
-	if ((chip->feature_bits & FEATURE_RESET_MASK) == FEATURE_LONG_RESET)
+	if (long_reset)
 	{
 		chip_writeb(flash, 0xAA, bios + (0x5555 & mask));
 		if (delay)
@@ -193,34 +211,54 @@ int probe_jedec(struct flashctx *flash)
 	if (delay)
 		programmer_delay(delay);
 
-	msg_cdbg("%s: id1 0x%02x, id2 0x%02x", __func__, largeid1, largeid2);
-	if (!oddparity(id1))
-		msg_cdbg(", id1 parity violation");
-
+	uint8_t cont[idx];
+	unsigned cont_idx = 0;
 	/* Read the product ID location again. We should now see normal flash contents. */
-	flashcontent1 = chip_readb(flash, bios);
-	flashcontent2 = chip_readb(flash, bios + 0x01);
+	cont[cont_idx] = chip_readb(flash, bios);
 
 	/* Check if it is a continuation ID, this should be a while loop. */
-	if (flashcontent1 == 0x7F) {
-		flashcontent1 <<= 8;
-		flashcontent1 |= chip_readb(flash, bios + 0x100);
+	if (cont[cont_idx++] == 0x7F) {
+		cont[cont_idx++] = chip_readb(flash, bios + 0x100);
 	}
-	if (flashcontent2 == 0x7F) {
-		flashcontent2 <<= 8;
-		flashcontent2 |= chip_readb(flash, bios + 0x101);
+	cont[cont_idx] = chip_readb(flash, bios + 0x01);
+	if (cont[cont_idx++] == 0x7F) {
+		cont[cont_idx++] = chip_readb(flash, bios + 0x101);
 	}
 
-	if (largeid1 == flashcontent1)
-		msg_cdbg(", id1 is normal flash content");
-	if (largeid2 == flashcontent2)
-		msg_cdbg(", id2 is normal flash content");
-
-	msg_cdbg("\n");
-	if (largeid1 != chip->manufacture_id || largeid2 != chip->model_id)
+	if (test_for_valid_ids(res->vals, cont, idx)) {
+		res->len = idx;
+		return 1;
+	} else {
+		res->len = 0;
 		return 0;
+	}
 
 	return 1;
+}
+
+int probe_jedec_longreset(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p)
+{
+	return probe_jedec(flash, res, MASK_FULL, true);
+}
+
+int probe_jedec_shortreset_full(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p)
+{
+	return probe_jedec(flash, res, MASK_FULL, false);
+}
+
+int probe_jedec_shortreset_full_384(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p)
+{
+	return probe_jedec(flash, res, MASK_FULL, false);
+}
+
+int probe_jedec_shortreset_2aa(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p)
+{
+	return probe_jedec(flash, res, MASK_2AA, false);
+}
+
+int probe_jedec_shortreset_aaa(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p)
+{
+	return probe_jedec(flash, res, MASK_AAA, false);
 }
 
 static int erase_sector_jedec_common(struct flashctx *flash, unsigned int page,

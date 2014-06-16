@@ -204,6 +204,7 @@ typedef struct _OPCODES {
 
 static OPCODES *curopcodes = NULL;
 
+
 /* HW access functions */
 static uint32_t REGREAD32(int X)
 {
@@ -1187,36 +1188,58 @@ static int ich_hwseq_wait_for_cycle_complete(unsigned int timeout,
 	return 0;
 }
 
+static int ich_hwseq_read(struct flashctx *flash, uint8_t *buf, unsigned int addr, unsigned int len);
+static int ich_hwseq_block_erase(struct flashctx *flash, unsigned int addr, unsigned int len);
+static int ich_hwseq_write(struct flashctx *flash, const uint8_t *buf, unsigned int addr, unsigned int len);
 static int ich_hwseq_probe(struct flashctx *flash)
 {
 	uint32_t total_size, boundary;
 	uint32_t erase_size_low, size_low, erase_size_high, size_high;
-	struct block_eraser *eraser;
 
 	total_size = hwseq_data.size_comp0 + hwseq_data.size_comp1;
-	msg_cdbg("Found %d attached SPI flash chip",
+	msg_cdbg("Hardware sequencing has found %d attached SPI flash chip",
 		 (hwseq_data.size_comp1 != 0) ? 2 : 1);
 	if (hwseq_data.size_comp1 != 0)
 		msg_cdbg("s with a combined");
 	else
 		msg_cdbg(" with a");
 	msg_cdbg(" density of %d kB.\n", total_size / 1024);
-	flash->chip->total_size = total_size / 1024;
 
-	eraser = &(flash->chip->block_erasers[0]);
+	struct flashchip *hwseq_chip = calloc(1, sizeof(struct flashchip));
+	if (hwseq_chip == NULL) {
+		msg_gerr("Out of memory!\n");
+		return -1;
+	}
+	if (register_shutdown(shutdown_free, (void *)hwseq_chip) != 0) {
+		msg_gerr("%s: Could not reqister shutdown function!\n", __func__);
+		free(hwseq_chip);
+		return -1;
+	}
+
+	hwseq_chip->vendor	= "Intel";
+	hwseq_chip->name	= "Flash chip(s) behind hardware sequencing";
+	hwseq_chip->bustype	= BUS_PROG;
+	hwseq_chip->page_size	= 256;
+	hwseq_chip->tested 	= TEST_OK_PREW;
+	hwseq_chip->block_erasers[0].block_erase = ich_hwseq_block_erase;
+	hwseq_chip->write	= ich_hwseq_write;
+	hwseq_chip->read	= ich_hwseq_read;
+	hwseq_chip->total_size = total_size / 1024;
+
+	struct block_eraser *eraser = &(hwseq_chip->block_erasers[0]);
 	boundary = (REGREAD32(ICH9_REG_FPB) & FPB_FPBA) << 12;
 	size_high = total_size - boundary;
 	erase_size_high = ich_hwseq_get_erase_block_size(boundary);
 
 	if (boundary == 0) {
-		msg_cdbg("There is only one partition containing the whole "
+		msg_cdbg2("There is only one partition containing the whole "
 			 "address space (0x%06x - 0x%06x).\n", 0, size_high-1);
 		eraser->eraseblocks[0].size = erase_size_high;
 		eraser->eraseblocks[0].count = size_high / erase_size_high;
-		msg_cdbg("There are %d erase blocks with %d B each.\n",
+		msg_cdbg2("There are %d erase blocks with %d B each.\n",
 			 size_high / erase_size_high, erase_size_high);
 	} else {
-		msg_cdbg("The flash address space (0x%06x - 0x%06x) is divided "
+		msg_cdbg2("The flash address space (0x%06x - 0x%06x) is divided "
 			 "at address 0x%06x in two partitions.\n",
 			 0, total_size-1, boundary);
 		size_low = total_size - size_high;
@@ -1224,20 +1247,20 @@ static int ich_hwseq_probe(struct flashctx *flash)
 
 		eraser->eraseblocks[0].size = erase_size_low;
 		eraser->eraseblocks[0].count = size_low / erase_size_low;
-		msg_cdbg("The first partition ranges from 0x%06x to 0x%06x.\n",
+		msg_cdbg2("The first partition ranges from 0x%06x to 0x%06x.\n",
 			 0, size_low-1);
-		msg_cdbg("In that range are %d erase blocks with %d B each.\n",
+		msg_cdbg2("In that range are %d erase blocks with %d B each.\n",
 			 size_low / erase_size_low, erase_size_low);
 
 		eraser->eraseblocks[1].size = erase_size_high;
 		eraser->eraseblocks[1].count = size_high / erase_size_high;
-		msg_cdbg("The second partition ranges from 0x%06x to 0x%06x.\n",
+		msg_cdbg2("The second partition ranges from 0x%06x to 0x%06x.\n",
 			 boundary, total_size-1);
-		msg_cdbg("In that range are %d erase blocks with %d B each.\n",
+		msg_cdbg2("In that range are %d erase blocks with %d B each.\n",
 			 size_high / erase_size_high, erase_size_high);
 	}
-	flash->chip->tested = TEST_OK_PREW;
-	return 1;
+	flash->chip = hwseq_chip;
+	return 0;
 }
 
 static int ich_hwseq_block_erase(struct flashctx *flash, unsigned int addr,
@@ -1547,9 +1570,6 @@ static const struct opaque_programmer opaque_programmer_ich_hwseq = {
 	.max_data_read = 64,
 	.max_data_write = 64,
 	.probe = ich_hwseq_probe,
-	.read = ich_hwseq_read,
-	.write = ich_hwseq_write,
-	.erase = ich_hwseq_block_erase,
 };
 
 int ich_init_spi(struct pci_dev *dev, void *spibar, enum ich_chipset ich_gen)

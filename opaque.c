@@ -30,31 +30,11 @@
 #include "chipdrivers.h"
 #include "programmer.h"
 
-int probe_opaque(struct flashctx *flash)
-{
-	return flash->pgm->opaque.probe(flash);
-}
-
-int read_opaque(struct flashctx *flash, uint8_t *buf, unsigned int start, unsigned int len)
-{
-	return flash->pgm->opaque.read(flash, buf, start, len);
-}
-
-int write_opaque(struct flashctx *flash, const uint8_t *buf, unsigned int start, unsigned int len)
-{
-	return flash->pgm->opaque.write(flash, buf, start, len);
-}
-
-int erase_opaque(struct flashctx *flash, unsigned int blockaddr, unsigned int blocklen)
-{
-	return flash->pgm->opaque.erase(flash, blockaddr, blocklen);
-}
-
 int register_opaque_programmer(const struct opaque_programmer *pgm)
 {
 	struct registered_programmer rpgm;
 
-	if (!pgm->probe || !pgm->read || !pgm->write || !pgm->erase) {
+	if (!pgm->probe) {
 		msg_perr("%s called with incomplete programmer definition. "
 			 "Please report a bug at flashrom@flashrom.org\n",
 			 __func__);

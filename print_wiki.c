@@ -292,11 +292,6 @@ static void print_supported_chips_wiki(int cols)
 	int i = 0, c = 1, chipcount = 0;
 
 	for (f = flashchips; f->name != NULL; f++) {
-		/* Don't count generic entries. */
-		if (!strncmp(f->vendor, "Unknown", 7) ||
-		    !strncmp(f->vendor, "Programmer", 10) ||
-		    !strncmp(f->name, "unknown", 7))
-			continue;
 		chipcount++;
 	}
 
@@ -308,12 +303,6 @@ static void print_supported_chips_wiki(int cols)
 	       "{| border=\"0\" valign=\"top\"\n", chipcount);
 
 	for (f = flashchips; f->name != NULL; f++) {
-		/* Don't print generic entries. */
-		if (!strncmp(f->vendor, "Unknown", 7) ||
-		    !strncmp(f->vendor, "Programmer", 10) ||
-		    !strncmp(f->name, "unknown", 7))
-			continue;
-
 		if ((i % lines_per_col) == 0)
 			printf("%s%s", th_start, chip_th);
 

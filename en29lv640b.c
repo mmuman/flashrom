@@ -58,10 +58,9 @@ int write_en29lv640b(struct flashctx *flash, const uint8_t *src, unsigned int st
 	return 0;
 }
 
-int probe_en29lv640b(struct flashctx *flash)
+int probe_en29lv640b(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2)
 {
 	chipaddr bios = flash->virtual_memory;
-	uint16_t id1, id2;
 
 	chip_writeb(flash, 0xAA, bios + 0xAAA);
 	chip_writeb(flash, 0x55, bios + 0x555);
@@ -69,21 +68,29 @@ int probe_en29lv640b(struct flashctx *flash)
 
 	programmer_delay(10);
 
-	id1 = chip_readb(flash, bios + 0x200);
-	id1 |= (chip_readb(flash, bios) << 8);
+#if (NUM_PROBE_BYTES < 3)
+#error probe_en29lv640b requires NUM_PROBE_BYTES to be at least 3.
+#endif
+	res->vals[0] = chip_readb(flash, bios + 0x200);
+	res->vals[1] = chip_readb(flash, bios);
 
-	id2 = chip_readb(flash, bios + 0x02);
+	res->vals[2] = chip_readb(flash, bios + 0x02);
 
 	chip_writeb(flash, 0xF0, bios + 0xAAA);
-
 	programmer_delay(10);
 
-	msg_cdbg("%s: id1 0x%04x, id2 0x%04x\n", __func__, id1, id2);
+	uint8_t cont[3];
+	cont[0] = chip_readb(flash, bios + 0x200);
+	cont[1] = chip_readb(flash, bios);
+	cont[2] = chip_readb(flash, bios + 0x02);
 
-	if (id1 == flash->chip->manufacture_id && id2 == flash->chip->model_id)
+	if (test_for_valid_ids(res->vals, cont, 3)) {
+		res->len = 3;
 		return 1;
-
-	return 0;
+	} else {
+		res->len = 0;
+		return 0;
+	}
 }
 
 static int erase_chip_shifted_jedec(struct flashctx *flash)

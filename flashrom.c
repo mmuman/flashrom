@@ -36,7 +36,7 @@
 #include <sys/utsname.h>
 #endif
 #include "flash.h"
-#include "flashchips.h"
+#include "chipdrivers.h"
 #include "programmer.h"
 #include "hwaccess.h"
 
@@ -363,6 +363,12 @@ static int may_register_shutdown = 0;
 static bool all_skipped = true;
 
 static int check_block_eraser(const struct flashctx *flash, int k, int log);
+
+int shutdown_free(void *data)
+{
+	free(data);
+	return 0;
+}
 
 /* Register a function to be executed on programmer shutdown.
  * The advantage over atexit() is that you can supply a void pointer which will
@@ -1085,107 +1091,302 @@ int map_flash(struct flashctx *flash)
 	return 0;
 }
 
-int probe_flash(struct registered_programmer *pgm, int startchip, struct flashctx *flash, int force)
+static probe probes[] = {
+	{ &probe_spi_rdid,			BUS_SPI, "RDID"},
+	{ &probe_spi_res,			BUS_SPI, "RES"},
+	{ &probe_spi_rems,			BUS_SPI, "REMS"},
+	{ &probe_spi_at25f,			BUS_SPI, "AT25F"},
+	{ &probe_spi_at45db,			BUS_SPI, "AT45DB"},
+	{ &probe_jedec_longreset,		BUS_PARALLEL, "JEDEC long", 64, 512, 1},
+	{ &probe_jedec_shortreset_full,		BUS_PARALLEL | BUS_LPC | BUS_FWH, "JEDEC short full", 64, 1024, 1},
+	{ &probe_jedec_shortreset_full_384,	BUS_FWH, "JEDEC short full 384k", 384, 384}, // workaround for SST49LF003A/B
+	{ &probe_jedec_shortreset_aaa,		BUS_PARALLEL, "JEDEC short AAA", 256, 256},
+	{ &probe_jedec_shortreset_2aa,		BUS_PARALLEL, "JEDEC short 2AA", 64, 2048, 1},
+	{ &probe_82802ab_unshifted,		BUS_PARALLEL | BUS_LPC | BUS_FWH, "82802AB", 256, 2048, 1},
+	{ &probe_82802ab_shifted,		BUS_PARALLEL | BUS_LPC | BUS_FWH, "82802AB shifted", 256, 2048, 1},
+	{ &probe_w29ee011,			BUS_PARALLEL , "W29EE011", 128, 128},
+	{ &probe_en29lv640b,			BUS_PARALLEL , "EN29LV640B", 8192, 8192},
+	{ &probe_m29f400bt,			BUS_PARALLEL , "M29F400BT", 512, 2048, 2},
+};
+
+int probe_allsizes(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p)
 {
-	const struct flashchip *chip;
-	uint32_t size;
-	enum chipbustype buses_common;
-	char *tmp;
-
-	for (chip = flashchips + startchip; chip && chip->name; chip++) {
-		if (chip_to_probe && strcmp(chip->name, chip_to_probe) != 0)
-			continue;
-		buses_common = pgm->buses_supported & chip->bustype;
-		if (!buses_common)
-			continue;
-		msg_gdbg("Probing for %s %s, %d kB: ", chip->vendor, chip->name, chip->total_size);
-		if (!chip->probe && !force) {
-			msg_gdbg("failed! flashrom has no probe function for this flash chip.\n");
-			continue;
-		}
-
-		/* Start filling in the dynamic data. */
-		flash->chip = calloc(1, sizeof(struct flashchip));
-		if (!flash->chip) {
-			msg_gerr("Out of memory!\n");
-			exit(1);
-		}
-		memcpy(flash->chip, chip, sizeof(struct flashchip));
-		flash->pgm = pgm;
-
-		if (map_flash(flash) != 0)
-			return -1;
-
-		size = chip->total_size * 1024;
-		/* We handle a forced match like a real match, we just avoid probing. Note that probe_flash()
-		 * is only called with force=1 after normal probing failed.
-		 */
-		if (force)
-			break;
-
-		if (flash->chip->probe(flash) != 1)
-			goto notfound;
-
-		/* If this is the first chip found, accept it.
-		 * If this is not the first chip found, accept it only if it is
-		 * a non-generic match. SFDP and CFI are generic matches.
-		 * startchip==0 means this call to probe_flash() is the first
-		 * one for this programmer interface and thus no other chip has
-		 * been found on this interface.
-		 */
-		if (startchip == 0 && flash->chip->model_id == SFDP_DEVICE_ID) {
-			msg_cinfo("===\n"
-				  "SFDP has autodetected a flash chip which is "
-				  "not natively supported by flashrom yet.\n");
-			if (count_usable_erasers(flash) == 0)
-				msg_cinfo("The standard operations read and "
-					  "verify should work, but to support "
-					  "erase, write and all other "
-					  "possible features");
-			else
-				msg_cinfo("All standard operations (read, "
-					  "verify, erase and write) should "
-					  "work, but to support all possible "
-					  "features");
-
-			msg_cinfo(" we need to add them manually.\n"
-				  "You can help us by mailing us the output of the following command to "
-				  "flashrom@flashrom.org:\n"
-				  "'flashrom -VV [plus the -p/--programmer parameter]'\n"
-				  "Thanks for your help!\n"
-				  "===\n");
-		}
-
-		/* First flash chip detected on this bus. */
-		if (startchip == 0)
-			break;
-		/* Not the first flash chip detected on this bus, but not a generic match either. */
-		if ((flash->chip->model_id != GENERIC_DEVICE_ID) && (flash->chip->model_id != SFDP_DEVICE_ID))
-			break;
-		/* Not the first flash chip detected on this bus, and it's just a generic match. Ignore it. */
-notfound:
-		unmap_flash(flash);
-		free(flash->chip);
-		flash->chip = NULL;
-	}
-
-	if (!flash->chip)
+	uint16_t size_min = p->size_min;
+	uint16_t size_max = p->size_max;
+	uint16_t size_step = p->size_step;
+	if (res_len == 0 || size_min == 0)
 		return -1;
 
-	tmp = flashbuses_to_text(flash->chip->bustype);
-	msg_cinfo("%s %s flash chip \"%s\" (%d kB, %s).\n", force ? "Assuming" : "Found",
-		  flash->chip->vendor, flash->chip->name, flash->chip->total_size, tmp);
-	free(tmp);
+	if (size_step == 0) {
+		size_step = 1;
+		msg_cspew("%s: setting step size to 1.\n", __func__);
+	}
 
-	/* Flash registers will not be mapped if the chip was forced. Lock info
-	 * may be stored in registers, so avoid lock info printing.
-	 */
-	if (!force)
-		if (flash->chip->printlock)
-			flash->chip->printlock(flash);
+	if (size_min > size_max) {
+		size_max = size_min;
+		msg_cspew("%s: setting max size to min size.\n", __func__);
+	}
 
-	/* Return position of matching chip. */
-	return chip - flashchips;
+	/* Probe for chips of multiple sizes with one function (pointer) */
+	int res_cnt = 0;
+	unsigned int s;
+	for (s = size_min; s <= size_max; s <<= size_step) {
+		void *addr = programmer_map_flash_region("probe_allsizes", 0xffffffff - s * 1024 + 1, s * 1024);
+		if (addr == ERROR_PTR) {
+			msg_cwarn("%s: Could not map physical memory to probe for size %d kB.", __func__, s);
+			continue;
+		}
+		flash->virtual_memory = (chipaddr)addr;
+		msg_cdbg("size %d... ", s);
+		int ret = p->probe_func(flash, res, res_len - res_cnt, p);
+		programmer_unmap_flash_region((void *)flash->virtual_memory, s * 1024);
+		if (ret >= 1) {
+			msg_cspew("%s: size %d returned %d result(s).\n", __func__, s, ret);
+			res->chip_size = s;
+			res += ret;
+			res_cnt += ret;
+			res_len -= ret;
+		} else if (ret <= 0)
+			res->len = 0;
+		if (res_len == 0) {
+			msg_cdbg("%s: Maximum number of results reached after probing for size %d kB. ",
+				 __func__, s);
+			break;
+		}
+	}
+	return res_cnt;
+}
+
+/* Probe for regular chips on a single programmer. */
+static unsigned int probe_flash_int(struct flashctx **flashes, unsigned int flashes_len, struct registered_programmer *pgm)
+{
+	unsigned int matches_prog = 0;
+	/* First, obtain results of all possible probe functions on this programmer. */
+	probe_res results[30] = {{0}}; //fixme
+	unsigned int results_cnt = 0;
+	unsigned int valid_results = 0;
+	unsigned int p_cnt;
+	for (p_cnt = 0; p_cnt < ARRAY_SIZE(probes); p_cnt++) {
+		if (results_cnt == ARRAY_SIZE(results)) {
+			msg_cwarn("%s: Maximum number of results (%ld) reached after %d probers. ",
+				 __func__, ARRAY_SIZE(results), p_cnt);
+			break;
+		}
+		probe *p = &probes[p_cnt];
+		probe_res *res = &results[results_cnt];
+		if ((p->bustype & pgm->buses_supported) == 0)
+			continue;
+		msg_gdbg("Probing with %s... ", p->mnemonic);
+		struct flashctx ctx = {.pgm = pgm};
+		int ret;
+		if (p->size_min != 0 || p->size_max != 0 || p->size_step != 0) {
+			ret = probe_allsizes(&ctx, res, ARRAY_SIZE(results) - results_cnt, p);
+		} else {
+			ret = p->probe_func(&ctx, res, ARRAY_SIZE(results) - results_cnt, p);
+		}
+		msg_gdbg("done: %d.\n", ret);
+
+		res->probe_func = p->probe_func;
+		if (ret > 0) {
+			unsigned int i, j;
+			for (i = 0; i < ret; i++) {
+				bool valid = false;
+				for (j = 0; j < res->len; j++) {
+					msg_cdbg(" 0x%02x", res->vals[j]);
+					/* All zeros or all ones is most probably not a valid result, but any
+					 * byte containing something else makes the response valid. */
+					if (res->vals[j] != 0x00 && res->vals[j] != 0xFF) {
+						valid = true;
+					}
+				}
+				if (valid)
+					valid_results++;
+				else
+					msg_cdbg(" Invalid result.");
+
+				if (res->len > 0)
+					msg_cdbg("\n");
+
+				res++;
+			}
+			results_cnt += ret;
+		}
+	}
+
+	if (valid_results == 0) {
+		char *busses = flashbuses_to_text(pgm->buses_supported);
+		msg_cdbg("No valid probing results received for %s.\n", busses);
+		free(busses);
+		return 0;
+	}
+
+	/* Try to find matching chips. For each chip in the flashchips array, compare its stored probers
+	 * with the results obtained above. */
+	const struct flashchip *chip;
+	for (chip = flashchips; chip->name; chip++) {
+		if ((chip->bustype & pgm->buses_supported) == 0)
+			continue;
+		msg_cdbg2("Matching %s... ", chip->name);
+		bool mismatch = false; // set if any received result does not match the saved values
+		bool match = false; // set if at least one result matches
+		unsigned int want_cnt;
+		for (want_cnt = 0; want_cnt < ARRAY_SIZE(chip->probers); want_cnt++) {
+			const struct prober *want = &chip->probers[want_cnt];
+			if (want->func == NULL)
+				break; /* If there is a prober w/o a func we are done for this chip. */
+
+			msg_cspew("\nComaring ID #%d: ", want_cnt);
+
+			/* Look for the matching probe function and compare its result to the chip. */
+			for (p_cnt = 0; p_cnt < ARRAY_SIZE(probes); p_cnt++) {
+				probe *p = &probes[p_cnt];
+				if (want->func != p->probe_func) {
+					msg_cspew("want->func != p->probe_func, ");
+					continue; // look further for the current probe function
+				}
+
+				probe_res *res = NULL;
+				unsigned int i;
+				for (i = 0; i < results_cnt; i++) {
+					if (results[i].probe_func == want->func &&
+					    (results[i].chip_size == 0 ||
+					     results[i].chip_size == chip->total_size)) {
+						res = &results[i];
+						// there should only be 1 result for any size, use first found
+						break;
+					}
+				}
+				if (res == NULL || res->len == 0) {
+					msg_cspew("no result for probe #%d, ", p_cnt);
+					break; // right function but there is no result -> next function
+				}
+
+				msg_cspew("comparing %d bytes of probe #%d... ",
+					  min(res->len, want->res.len), p_cnt);
+
+				bool seen_vendor = false;
+				for (i = 0; i < min(res->len, want->res.len); i++) {
+					if (!seen_vendor && res->vals[i] != 0x7F && res->vals[i] != 0x00 &&
+					    res->vals[i] != 0xFF) {
+						seen_vendor = true;
+						if (!oddparity(res->vals[i]))
+							msg_cdbg("%s byte %d parity violation.\n",
+								 p->mnemonic, i);
+					}
+					if (res->vals[i] != want->res.vals[i]) {
+						msg_cspew("byte #%d unexpected (0x%02x != 0x%02x), ",
+							  i, res->vals[i], want->res.vals[i]);
+						mismatch = true;
+						goto chip_done; // a single mismatch is enough to abort
+					}
+				}
+				msg_cspew("all match. ");
+				match = true; // remember that at least one prober has matched
+				break; // skip to next prober
+			}
+		}
+chip_done:
+		msg_cdbg2("%s does%s match.\n", chip->name, match && !mismatch ? "" : " not");
+		if (match && !mismatch) {
+			char *busses = flashbuses_to_text(chip->bustype);
+			msg_cinfo("Found %s flash chip \"%s\" (%d kB, %s).\n",
+				  chip->vendor, chip->name, chip->total_size, busses);
+			free(busses);
+			struct flashctx *tmp = realloc(*flashes, sizeof(struct flashctx) * (flashes_len + 1));
+			if (tmp == NULL) {
+				msg_gerr("Out of memory!\n");
+				free(*flashes);
+				*flashes = NULL;
+				return -1;
+			}
+			tmp[flashes_len].pgm = pgm;
+			tmp[flashes_len].chip = chip;
+			if (chip->printlock != NULL)
+				chip->printlock(&tmp[flashes_len]);
+			*flashes = tmp;
+			flashes_len++;
+			matches_prog++;
+		}
+	}
+	return matches_prog;
+}
+
+int probe_flash(struct flashctx **flashes, const struct registered_programmer *prog)
+{
+	unsigned int matches_total = 0;
+	unsigned int pgm_cnt;
+	for (pgm_cnt = 0; pgm_cnt < registered_programmer_count; pgm_cnt++) {
+		struct registered_programmer *pgm = &registered_programmers[pgm_cnt];
+		int matches_prog = probe_flash_int(flashes, matches_total, pgm);
+		if (matches_prog < 0) {
+			msg_cerr("%s: probe_flash_int for programmer #%d returned an error, aborting.",
+				  __func__, pgm_cnt);
+			free(*flashes);
+			return -1;
+		}
+
+		matches_total += matches_prog;
+
+		if (pgm->buses_supported & BUS_SPI) {
+			/* Try to detect SFDP only if there are no specific matches for this programmer. */
+			if (matches_prog == 0) {
+				struct flashctx *tmp = realloc(*flashes, sizeof(struct flashctx) * (matches_total + 1));
+				if (tmp == NULL) {
+					msg_gerr("Out of memory!\n");
+					free(*flashes);
+					return -1;
+				}
+				*flashes = tmp;
+				flashes[matches_total]->pgm = pgm;
+				if (probe_spi_sfdp(flashes[matches_total]) == 1) {
+					msg_cinfo("===\n"
+						  "SFDP has autodetected a flash chip which is "
+						  "not natively supported by flashrom yet.\n");
+					if (count_usable_erasers(flashes[matches_total]) == 0)
+						msg_cinfo("The standard operations read and "
+							  "verify should work, but to support "
+							  "erase, write and all other "
+							  "possible features");
+					else
+						msg_cinfo("All standard operations (read, "
+							  "verify, erase and write) should "
+							  "work, but to support all possible "
+							  "features");
+
+					msg_cinfo(" we need to add them manually.\n"
+						  "You can help us by mailing us the output of the following "
+						  "command to flashrom@flashrom.org:\n"
+						  "'flashrom -VV [plus the -p/--programmer parameters]'\n"
+						  "Thanks for your help!\n"
+						  "===\n");
+					matches_total++;
+				}
+			}
+		}
+	}
+
+	/* Similar to SFDP above but here we check that there were no matches whatsoever at the very end of
+	 * probing so that everything else gets precedence. */
+	if (matches_total == 0) {
+		for (pgm_cnt = 0; pgm_cnt < registered_programmer_count; pgm_cnt++) {
+			struct registered_programmer *pgm = &registered_programmers[pgm_cnt];
+			if (pgm->buses_supported & BUS_PROG) {
+				struct flashctx *tmp = realloc(*flashes, sizeof(struct flashctx) * (matches_total + 1));
+				if (tmp == NULL) {
+					msg_gerr("Out of memory!\n");
+					free(*flashes);
+					return -1;
+				}
+				*flashes = tmp;
+				flashes[matches_total]->pgm = pgm;
+				if (pgm->opaque.probe(flashes[matches_total]) == 0) {
+					matches_total++;
+				}
+			}
+		}
+	}
+
+	return matches_total;
 }
 
 int read_buf_from_file(unsigned char *buf, unsigned long size,
@@ -1887,6 +2088,9 @@ int doit(struct flashctx *flash, int force, const char *filename, int read_it,
 		msg_cerr("Requested regions can not be handled. Aborting.\n");
 		return 1;
 	}
+
+	if (map_flash(flash) != 0)
+		return 1;
 
 	/* Given the existence of read locks, we want to unlock for read,
 	 * erase and write.

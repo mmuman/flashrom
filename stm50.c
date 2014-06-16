@@ -53,7 +53,7 @@ static int stm50_unlock_address(struct flashctx *flash, int offset)
 int unlock_stm50_nonuniform(struct flashctx *flash)
 {
 	int i;
-	struct eraseblock *eraseblocks = flash->chip->block_erasers[0].eraseblocks;
+	const struct eraseblock *eraseblocks = flash->chip->block_erasers[0].eraseblocks;
 	unsigned int done = 0;
 	for (i = 0; i < NUM_ERASEREGIONS && eraseblocks[i].count != 0; i++) {
 		unsigned int block_size = eraseblocks[i].size;

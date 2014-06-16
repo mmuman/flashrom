@@ -256,51 +256,30 @@ static int sfdp_fill_flash(struct flashchip *chip, uint8_t *buf, uint16_t len)
 	}
 
 done:
+	chip->vendor	= "Unknown";
+	chip->name	= "SFDP-capable chip";
+	chip->bustype	= BUS_SPI;
+	/* We present our own "report this" text hence we do not
+	 * want the default "This flash part has status UNTESTED..."
+	 * text to be printed. */
+	chip->tested 	= TEST_OK_PREW;
+	chip->unlock	= spi_disable_blockprotect; /* is this safe? */
+	chip->read	= spi_chip_read;
+	/* FIXME: some vendor extensions define voltage ranges too. */
+
 	msg_cdbg("done.\n");
 	return 0;
 }
 
-int probe_spi_sfdp(struct flashctx *flash)
+static int sfdp_parse_headers(struct flashctx *flash, struct flashchip *sfdp_chip, uint8_t nph)
 {
-	int ret = 0;
-	uint8_t buf[8];
 	uint32_t tmp32;
-	uint8_t nph;
 	/* need to limit the table loop by comparing i to uint8_t nph hence: */
 	uint16_t i;
 	struct sfdp_tbl_hdr *hdrs;
 	uint8_t *hbuf;
 	uint8_t *tbuf;
-
-	if (spi_sfdp_read_sfdp(flash, 0x00, buf, 4)) {
-		msg_cdbg("Receiving SFDP signature failed.\n");
-		return 0;
-	}
-	tmp32 = buf[0];
-	tmp32 |= ((unsigned int)buf[1]) << 8;
-	tmp32 |= ((unsigned int)buf[2]) << 16;
-	tmp32 |= ((unsigned int)buf[3]) << 24;
-
-	if (tmp32 != 0x50444653) {
-		msg_cdbg2("Signature = 0x%08x (should be 0x50444653)\n", tmp32);
-		msg_cdbg("No SFDP signature found.\n");
-		return 0;
-	}
-
-	if (spi_sfdp_read_sfdp(flash, 0x04, buf, 3)) {
-		msg_cdbg("Receiving SFDP revision and number of parameter "
-			 "headers (NPH) failed. ");
-		return 0;
-	}
-	msg_cdbg2("SFDP revision = %d.%d\n", buf[1], buf[0]);
-	if (buf[1] != 0x01) {
-		msg_cdbg("The chip supports an unknown version of SFDP. "
-			  "Aborting SFDP probe!\n");
-		return 0;
-	}
-	nph = buf[2];
-	msg_cdbg2("SFDP number of parameter headers is %d (NPH = %d).\n",
-		  nph + 1, nph);
+	int ret = 1;
 
 	/* Fetch all parameter headers, even if we don't use them all (yet). */
 	hbuf = malloc((nph + 1) * 8);
@@ -381,8 +360,8 @@ int probe_spi_sfdp(struct flashctx *flash)
 				msg_cdbg("Length of the mandatory JEDEC SFDP "
 					 "parameter table is wrong (%d B), "
 					 "skipping it.\n", len);
-			} else if (sfdp_fill_flash(flash->chip, tbuf, len) == 0)
-				ret = 1;
+			} else
+				ret = sfdp_fill_flash(sfdp_chip, tbuf, len);
 		}
 		free(tbuf);
 	}
@@ -390,5 +369,63 @@ int probe_spi_sfdp(struct flashctx *flash)
 cleanup_hdrs:
 	free(hdrs);
 	free(hbuf);
+
+	return ret;
+}
+
+int probe_spi_sfdp(struct flashctx *flash)
+{
+	int ret = -1;
+	uint8_t buf[8];
+	uint32_t tmp32;
+
+	msg_cdbg("Looking for a SFDP-compatible chip... ");
+	if (spi_sfdp_read_sfdp(flash, 0x00, buf, 4)) {
+		msg_cdbg("Receiving SFDP signature failed.\n");
+		return -1;
+	}
+	tmp32 = buf[0];
+	tmp32 |= ((unsigned int)buf[1]) << 8;
+	tmp32 |= ((unsigned int)buf[2]) << 16;
+	tmp32 |= ((unsigned int)buf[3]) << 24;
+
+	if (tmp32 != 0x50444653) {
+		msg_cdbg2("Signature = 0x%08x (should be 0x50444653)\n", tmp32);
+		msg_cdbg("No SFDP signature found.\n");
+		return 0;
+	}
+
+	if (spi_sfdp_read_sfdp(flash, 0x04, buf, 3)) {
+		msg_cdbg("Receiving SFDP revision and number of parameter "
+			 "headers (NPH) failed. ");
+		return -1;
+	}
+	msg_cdbg2("SFDP revision = %d.%d\n", buf[1], buf[0]);
+	if (buf[1] != 0x01) {
+		msg_cdbg("The chip supports an unknown version of SFDP. "
+			  "Aborting SFDP probe!\n");
+		return 0;
+	}
+	msg_cdbg2("SFDP number of parameter headers is %d (NPH = %d).\n",
+		  buf[2] + 1, buf[2]);
+
+	struct flashchip *sfdp_chip = calloc(1, sizeof(struct flashchip));
+	if (sfdp_chip == NULL) {
+		msg_gerr("Out of memory!\n");
+		return -1;
+	}
+
+	ret = sfdp_parse_headers(flash, sfdp_chip, buf[2]);
+
+	if (ret == 0) {
+		if (register_shutdown(shutdown_free, (void *)sfdp_chip) != 0) {
+			msg_gerr("%s: Could not reqister shutdown function!\n", __func__);
+			free(sfdp_chip);
+			return -1;
+		}
+		flash->chip = sfdp_chip;
+	} else
+		free(sfdp_chip);
+
 	return ret;
 }

@@ -53,6 +53,7 @@ typedef uint32_t chipsize_t; /* Able to store the number of bytes of any support
 #define PRIxCHIPADDR "06"PRIx32
 #define PRIuCHIPSIZE PRIu32
 
+int shutdown_free(void *data);
 int register_shutdown(int (*function) (void *data), void *data);
 void *programmer_map_flash_region(const char *descr, uintptr_t phys_addr, size_t len);
 void programmer_unmap_flash_region(void *virt_addr, size_t len);
@@ -140,22 +141,42 @@ enum test_state {
 #define TEST_BAD_PRE	(struct tested){ .probe = BAD, .read = BAD, .erase = BAD, .write = NT }
 #define TEST_BAD_PREW	(struct tested){ .probe = BAD, .read = BAD, .erase = BAD, .write = BAD }
 
+
+#define NUM_PROBES 3
+#define NUM_PROBE_BYTES 5 /* Values below 2 will break code. */
+
 struct flashctx;
-typedef int (erasefunc_t)(struct flashctx *flash, unsigned int addr, unsigned int blocklen);
+struct registered_programmer; /* programmer.h */
+struct probe;
+struct probe_res;
+
+/* fixme  */
+typedef int (probefunc_t)(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p);
+
+typedef struct probe_res {
+	uint8_t len;
+	uint8_t vals[NUM_PROBE_BYTES];
+	probefunc_t *probe_func;
+	unsigned int chip_size; /* in kB */
+} probe_res;
+
+typedef struct probe {
+	probefunc_t *probe_func;
+	enum chipbustype bustype;
+	const char *mnemonic;
+	uint16_t size_min;
+	uint16_t size_max;
+	uint8_t size_step;
+} probe;
+
+/* An erase function should try to erase one block of size 'len' at address 'addr' and return 0 on success. */
+typedef int (erasefunc_t)(struct flashctx *flash, unsigned int addr, unsigned int len);
 
 struct flashchip {
 	const char *vendor;
 	const char *name;
 
 	enum chipbustype bustype;
-
-	/*
-	 * With 32bit manufacture_id and model_id we can cover IDs up to
-	 * (including) the 4th bank of JEDEC JEP106W Standard Manufacturer's
-	 * Identification code.
-	 */
-	uint32_t manufacture_id;
-	uint32_t model_id;
 
 	/* Total chip size in kilobytes */
 	unsigned int total_size;
@@ -171,7 +192,10 @@ struct flashchip {
 		enum test_state write;
 	} tested;
 
-	int (*probe) (struct flashctx *flash);
+	struct prober {
+		probefunc_t *func;
+		struct probe_res res;
+	} probers[NUM_PROBES];
 
 	/*
 	 * Erase blocks and associated erase function. Any chip erase function
@@ -185,9 +209,7 @@ struct flashchip {
 			unsigned int size; /* Eraseblock size in bytes */
 			unsigned int count; /* Number of contiguous blocks with that size */
 		} eraseblocks[NUM_ERASEREGIONS];
-		/* a block_erase function should try to erase one block of size
-		 * 'blocklen' at address 'blockaddr' and return 0 on success. */
-		int (*block_erase) (struct flashctx *flash, unsigned int blockaddr, unsigned int blocklen);
+		erasefunc_t *block_erase;
 	} block_erasers[NUM_ERASEFUNCTIONS];
 
 	int (*printlock) (struct flashctx *flash);
@@ -202,7 +224,7 @@ struct flashchip {
 };
 
 struct flashctx {
-	struct flashchip *chip;
+	const struct flashchip *chip;
 	chipaddr virtual_memory;
 	/* Some flash devices have an additional register space. */
 	chipaddr virtual_registers;
@@ -241,7 +263,7 @@ extern const char flashrom_version[];
 extern const char *chip_to_probe;
 int read_memmapped(struct flashctx *flash, uint8_t *buf, unsigned int start, unsigned int len);
 int erase_flash(struct flashctx *flash);
-int probe_flash(struct registered_programmer *pgm, int startchip, struct flashctx *fill_flash, int force);
+int probe_flash(struct flashctx **flashes, const struct registered_programmer *pgm);
 int read_flash_to_file(struct flashctx *flash, const char *filename);
 char *extract_param(const char *const *haystack, const char *needle, const char *delim);
 int verify_range(struct flashctx *flash, const uint8_t *cmpbuf, unsigned int start, unsigned int len);
@@ -327,5 +349,7 @@ int spi_send_command(struct flashctx *flash, unsigned int writecnt, unsigned int
 int spi_send_multicommand(struct flashctx *flash, struct spi_command *cmds);
 uint32_t spi_get_valid_read_addr(struct flashctx *flash);
 
+/* programmer.c */
 enum chipbustype get_buses_supported(void);
+
 #endif				/* !__FLASH_H__ */

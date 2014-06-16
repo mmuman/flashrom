@@ -109,11 +109,6 @@ static int print_supported_chips(void)
 
 	/* calculate maximum column widths and by iterating over all chips */
 	for (chip = flashchips; chip->name != NULL; chip++) {
-		/* Ignore generic entries. */
-		if (!strncmp(chip->vendor, "Unknown", 7) ||
-		    !strncmp(chip->vendor, "Programmer", 10) ||
-		    !strncmp(chip->name, "unknown", 7))
-			continue;
 		chipcount++;
 
 		/* Find maximum vendor length (respecting line splitting). */
@@ -195,15 +190,9 @@ static int print_supported_chips(void)
 		msg_ginfo(" ");
 	msg_gdbg("range [V]");
 	msg_ginfo("\n\n");
-	msg_ginfo("(P = PROBE, R = READ, E = ERASE, W = WRITE)\n\n");
+	msg_ginfo("(P = PROBE, R = READ, E = ERASE, W = WRITE, - = N/A)\n\n");
 
 	for (chip = flashchips; chip->name != NULL; chip++) {
-		/* Don't print generic entries. */
-		if (!strncmp(chip->vendor, "Unknown", 7) ||
-		    !strncmp(chip->vendor, "Programmer", 10) ||
-		    !strncmp(chip->name, "unknown", 7))
-			continue;
-
 		/* support for multiline vendor names:
 		 * - make a copy of the original vendor name
 		 * - use strok to put the first token in tmpven

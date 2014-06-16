@@ -33,13 +33,10 @@ int spi_chip_write_256(struct flashctx *flash, const uint8_t *buf, unsigned int 
 int spi_chip_read(struct flashctx *flash, uint8_t *buf, unsigned int start, int unsigned len);
 
 /* spi25.c */
-int probe_spi_rdid(struct flashctx *flash);
-int probe_spi_rdid4(struct flashctx *flash);
-int probe_spi_rems(struct flashctx *flash);
-int probe_spi_res1(struct flashctx *flash);
-int probe_spi_res2(struct flashctx *flash);
-int probe_spi_res3(struct flashctx *flash);
-int probe_spi_at25f(struct flashctx *flash);
+int probe_spi_rdid(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
+int probe_spi_rems(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
+int probe_spi_res(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
+int probe_spi_at25f(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
 int spi_write_enable(struct flashctx *flash);
 int spi_write_disable(struct flashctx *flash);
 int spi_block_erase_20(struct flashctx *flash, unsigned int addr, unsigned int blocklen);
@@ -108,12 +105,12 @@ int probe_spi_sfdp(struct flashctx *flash);
 
 /* opaque.c */
 int probe_opaque(struct flashctx *flash);
-int read_opaque(struct flashctx *flash, uint8_t *buf, unsigned int start, unsigned int len);
-int write_opaque(struct flashctx *flash, const uint8_t *buf, unsigned int start, unsigned int len);
-int erase_opaque(struct flashctx *flash, unsigned int blockaddr, unsigned int blocklen);
+
+/* flashrom.c */
+int probe_allsizes(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p);
 
 /* at45db.c */
-int probe_spi_at45db(struct flashctx *flash);
+int probe_spi_at45db(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p);
 int spi_prettyprint_status_register_at45db(struct flashctx *flash);
 int spi_disable_blockprotect_at45db(struct flashctx *flash);
 int spi_read_at45db(struct flashctx *flash, uint8_t *buf, unsigned int start, unsigned int len);
@@ -127,8 +124,8 @@ int spi_erase_at45cs_sector(struct flashctx *flash, unsigned int addr, unsigned 
 
 /* 82802ab.c */
 uint8_t wait_82802ab(struct flashctx *flash);
-int probe_82802ab_shifted(struct flashctx *flash);
-int probe_82802ab_unshifted(struct flashctx *flash);
+int probe_82802ab_shifted(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
+int probe_82802ab_unshifted(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
 int erase_block_82802ab(struct flashctx *flash, unsigned int page, unsigned int pagesize);
 int write_82802ab(struct flashctx *flash, const uint8_t *buf, unsigned int start, unsigned int len);
 void print_status_82802ab(uint8_t status);
@@ -138,9 +135,14 @@ int unlock_lh28f008bjt(struct flashctx *flash);
 
 /* jedec.c */
 uint8_t oddparity(uint8_t val);
+bool test_for_valid_ids(uint8_t *ids, uint8_t *content, unsigned int len);
 void toggle_ready_jedec(const struct flashctx *flash, chipaddr dst);
 void data_polling_jedec(const struct flashctx *flash, chipaddr dst, uint8_t data);
-int probe_jedec(struct flashctx *flash);
+int probe_jedec_longreset(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
+int probe_jedec_shortreset_full(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
+int probe_jedec_shortreset_full_384(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
+int probe_jedec_shortreset_aaa(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
+int probe_jedec_shortreset_2aa(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
 int write_jedec(struct flashctx *flash, const uint8_t *buf, unsigned int start, unsigned int len);
 int write_jedec_1(struct flashctx *flash, const uint8_t *buf, unsigned int start, unsigned int len);
 int erase_sector_jedec(struct flashctx *flash, unsigned int page, unsigned int pagesize);
@@ -148,7 +150,7 @@ int erase_block_jedec(struct flashctx *flash, unsigned int page, unsigned int bl
 int erase_chip_block_jedec(struct flashctx *flash, unsigned int page, unsigned int blocksize);
 
 /* m29f400bt.c */
-int probe_m29f400bt(struct flashctx *flash);
+int probe_m29f400bt(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
 int write_m29f400bt(struct flashctx *flash, const uint8_t *buf, unsigned int start, unsigned int len);
 void protect_m29f400bt(struct flashctx *flash, chipaddr bios);
 
@@ -190,7 +192,7 @@ int unlock_w39v080fa(struct flashctx *flash);
 int printlock_at49f(struct flashctx *flash);
 
 /* w29ee011.c */
-int probe_w29ee011(struct flashctx *flash);
+int probe_w29ee011(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
 
 /* stm50.c */
 int erase_sector_stm50(struct flashctx *flash, unsigned int block, unsigned int blocksize);
@@ -198,7 +200,7 @@ int unlock_stm50_uniform(struct flashctx *flash);
 int unlock_stm50_nonuniform(struct flashctx *flash);
 
 /* en29lv640b.c */
-int probe_en29lv640b(struct flashctx *flash);
+int probe_en29lv640b(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2);
 int erase_block_shifted_jedec(struct flashctx *flash, unsigned int start, unsigned int len);
 int erase_chip_block_shifted_jedec(struct flashctx *flash, unsigned int start, unsigned int len);
 int write_en29lv640b(struct flashctx *flash, const uint8_t *buf, unsigned int start, unsigned int len);

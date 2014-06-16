@@ -55,10 +55,9 @@ int write_m29f400bt(struct flashctx *flash, const uint8_t *src, unsigned int sta
 	return 0;
 }
 
-int probe_m29f400bt(struct flashctx *flash)
+int probe_m29f400bt(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2)
 {
 	chipaddr bios = flash->virtual_memory;
-	uint8_t id1, id2;
 
 	chip_writeb(flash, 0xAA, bios + 0xAAA);
 	chip_writeb(flash, 0x55, bios + 0x555);
@@ -66,11 +65,14 @@ int probe_m29f400bt(struct flashctx *flash)
 
 	programmer_delay(10);
 
-	id1 = chip_readb(flash, bios);
+#if (NUM_PROBE_BYTES < 2)
+#error probe_m29f400bt requires NUM_PROBE_BYTES to be at least 2.
+#endif
+	res->vals[0] = chip_readb(flash, bios);
 	/* The data sheet says id2 is at (bios + 0x01) and id2 listed in
 	 * flash.h does not match. It should be possible to use JEDEC probe.
 	 */
-	id2 = chip_readb(flash, bios + 0x02);
+	res->vals[1] = chip_readb(flash, bios + 0x02);
 
 	chip_writeb(flash, 0xAA, bios + 0xAAA);
 	chip_writeb(flash, 0x55, bios + 0x555);
@@ -78,10 +80,15 @@ int probe_m29f400bt(struct flashctx *flash)
 
 	programmer_delay(10);
 
-	msg_cdbg("%s: id1 0x%02x, id2 0x%02x\n", __func__, id1, id2);
+	uint8_t cont[2];
+	cont[0] = chip_readb(flash, bios);
+	cont[1] = chip_readb(flash, bios + 0x02);
 
-	if (id1 == flash->chip->manufacture_id && id2 == flash->chip->model_id)
+	if (test_for_valid_ids(res->vals, cont, 2)) {
+		res->len = 2;
 		return 1;
-
-	return 0;
+	} else {
+		res->len = 0;
+		return 0;
+	}
 }

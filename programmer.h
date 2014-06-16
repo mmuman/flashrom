@@ -629,9 +629,6 @@ struct opaque_programmer {
 	int max_data_write;
 	/* Specific functions for this programmer */
 	int (*probe) (struct flashctx *flash);
-	int (*read) (struct flashctx *flash, uint8_t *buf, unsigned int start, unsigned int len);
-	int (*write) (struct flashctx *flash, const uint8_t *buf, unsigned int start, unsigned int len);
-	int (*erase) (struct flashctx *flash, unsigned int blockaddr, unsigned int blocklen);
 	const void *data;
 };
 int register_opaque_programmer(const struct opaque_programmer *pgm);
@@ -669,7 +666,7 @@ struct registered_programmer {
 };
 extern struct registered_programmer registered_programmers[];
 extern int registered_programmer_count;
-int register_programmer(struct registered_programmer *pgm);
+int register_programmer(const struct registered_programmer *pgm);
 
 /* serprog.c */
 #if CONFIG_SERPROG == 1

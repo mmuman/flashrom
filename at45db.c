@@ -170,48 +170,26 @@ int spi_prettyprint_status_register_at45db(struct flashctx *flash)
 	return 0;
 }
 
-/* Probe function for AT45DB* chips that support multiple page sizes. */
-int probe_spi_at45db(struct flashctx *flash)
+/* Probe function for AT45DB* chips that support multiple page sizes. In order to tell which page size a chip
+ * has we need to read the status register and investigate bit #0. */
+int probe_spi_at45db(struct flashctx *flash, struct probe_res *res, unsigned int res_len, const struct probe *p)
 {
+#if (NUM_PROBE_BYTES < 1)
+#error probe_spi_at45db requires NUM_PROBE_BYTES to be at least 1.
+#endif
+
+	if (res_len == 0)
+		return -1;
+
 	uint8_t status;
-	struct flashchip *chip = flash->chip;
-
-	if (!probe_spi_rdid(flash))
-		return 0;
-
-	/* Some AT45DB* chips support two different page sizes each (e.g. 264 and 256 B). In order to tell which
-	 * page size this chip has we need to read the status register. */
 	if (at45db_read_status_register(flash, &status) != 0)
+		return -1;
+
+	if (status == 0xFF || status == 0x00)
 		return 0;
 
-	/* We assume sane power-of-2 page sizes and adjust the chip attributes in case this is not the case. */
-	if ((status & AT45DB_POWEROF2) == 0) {
-		chip->total_size = (chip->total_size / 32) * 33;
-		chip->page_size = (chip->page_size / 32) * 33;
-
-		unsigned int i, j;
-		for (i = 0; i < NUM_ERASEFUNCTIONS; i++) {
-			struct block_eraser *eraser = &chip->block_erasers[i];
-			for (j = 0; j < NUM_ERASEREGIONS; j++) {
-				eraser->eraseblocks[j].size = (eraser->eraseblocks[j].size / 32) * 33;
-			}
-		}
-	}
-
-	switch (chip->page_size) {
-	case 256: chip->gran = write_gran_256bytes; break;
-	case 264: chip->gran = write_gran_264bytes; break;
-	case 512: chip->gran = write_gran_512bytes; break;
-	case 528: chip->gran = write_gran_528bytes; break;
-	case 1024: chip->gran = write_gran_1024bytes; break;
-	case 1056: chip->gran = write_gran_1056bytes; break;
-	default:
-		msg_cerr("%s: unknown page size %d.\n", __func__, chip->page_size);
-		return 0;
-	}
-
-	msg_cdbg2("%s: total size %i kB, page size %i B\n", __func__, chip->total_size * 1024, chip->page_size);
-
+	res->vals[0] = status & AT45DB_POWEROF2;
+	res->len = 1;
 	return 1;
 }
 

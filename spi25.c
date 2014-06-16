@@ -29,68 +29,40 @@
 #include "programmer.h"
 #include "spi.h"
 
-static int spi_rdid(struct flashctx *flash, unsigned char *readarr, int bytes)
+static int spi_rdid(struct flashctx *flash, unsigned char *readarr, unsigned int bytes)
 {
-	static const unsigned char cmd[JEDEC_RDID_OUTSIZE] = { JEDEC_RDID };
-	int ret;
-	int i;
-
-	ret = spi_send_command(flash, sizeof(cmd), bytes, cmd, readarr);
-	if (ret)
-		return ret;
-	msg_cspew("RDID returned");
-	for (i = 0; i < bytes; i++)
-		msg_cspew(" 0x%02x", readarr[i]);
-	msg_cspew(". ");
-	return 0;
+	static const unsigned char cmd[] = { JEDEC_RDID };
+	if (spi_send_command(flash, sizeof(cmd), bytes, cmd, readarr) != 0)
+		return -1;
+	return test_for_valid_ids(readarr, NULL, bytes) ? 1 : 0;
 }
 
-static int spi_rems(struct flashctx *flash, unsigned char *readarr)
+static int probe_spi_res_rems(struct flashctx *flash, struct probe_res *res, uint8_t opcode)
 {
-	unsigned char cmd[JEDEC_REMS_OUTSIZE] = { JEDEC_REMS, 0, 0, 0 };
-	uint32_t readaddr;
-	int ret;
-
-	ret = spi_send_command(flash, sizeof(cmd), JEDEC_REMS_INSIZE, cmd,
-			       readarr);
+	unsigned char cmd[] = { opcode, 0, 0, 0 }; /* opcode + address */
+	res->len = ARRAY_SIZE(res->vals); // fill up to maximum if possible
+	int ret = spi_send_command(flash, sizeof(cmd), res->len, cmd, res->vals);
 	if (ret == SPI_INVALID_ADDRESS) {
 		/* Find the lowest even address allowed for reads. */
-		readaddr = (spi_get_valid_read_addr(flash) + 1) & ~1;
+		uint32_t readaddr = (spi_get_valid_read_addr(flash) + 1) & ~1;
 		cmd[1] = (readaddr >> 16) & 0xff,
 		cmd[2] = (readaddr >> 8) & 0xff,
 		cmd[3] = (readaddr >> 0) & 0xff,
-		ret = spi_send_command(flash, sizeof(cmd), JEDEC_REMS_INSIZE,
-				       cmd, readarr);
+		ret = spi_send_command(flash, sizeof(cmd), res->len, cmd, res->vals);
 	}
-	if (ret)
-		return ret;
-	msg_cspew("REMS returned 0x%02x 0x%02x. ", readarr[0], readarr[1]);
-	return 0;
+	if (ret != 0)
+		return -1;
+	return test_for_valid_ids(res->vals, NULL, res->len) ? 1 : 0;
 }
 
-static int spi_res(struct flashctx *flash, unsigned char *readarr, int bytes)
+int probe_spi_rems(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2)
 {
-	unsigned char cmd[JEDEC_RES_OUTSIZE] = { JEDEC_RES, 0, 0, 0 };
-	uint32_t readaddr;
-	int ret;
-	int i;
+	return probe_spi_res_rems(flash, res, JEDEC_REMS);
+}
 
-	ret = spi_send_command(flash, sizeof(cmd), bytes, cmd, readarr);
-	if (ret == SPI_INVALID_ADDRESS) {
-		/* Find the lowest even address allowed for reads. */
-		readaddr = (spi_get_valid_read_addr(flash) + 1) & ~1;
-		cmd[1] = (readaddr >> 16) & 0xff,
-		cmd[2] = (readaddr >> 8) & 0xff,
-		cmd[3] = (readaddr >> 0) & 0xff,
-		ret = spi_send_command(flash, sizeof(cmd), bytes, cmd, readarr);
-	}
-	if (ret)
-		return ret;
-	msg_cspew("RES returned");
-	for (i = 0; i < bytes; i++)
-		msg_cspew(" 0x%02x", readarr[i]);
-	msg_cspew(". ");
-	return 0;
+int probe_spi_res(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2)
+{
+	return probe_spi_res_rems(flash, res, JEDEC_RES);
 }
 
 int spi_write_enable(struct flashctx *flash)
@@ -115,210 +87,37 @@ int spi_write_disable(struct flashctx *flash)
 	return spi_send_command(flash, sizeof(cmd), 0, cmd, NULL);
 }
 
-static int probe_spi_rdid_generic(struct flashctx *flash, int bytes)
+int probe_spi_rdid(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2)
 {
-	const struct flashchip *chip = flash->chip;
-	unsigned char readarr[4];
-	uint32_t id1;
-	uint32_t id2;
-
-	if (spi_rdid(flash, readarr, bytes)) {
-		return 0;
-	}
-
-	if (!oddparity(readarr[0]))
-		msg_cdbg("RDID byte 0 parity violation. ");
-
-	/* Check if this is a continuation vendor ID.
-	 * FIXME: Handle continuation device IDs.
-	 */
-	if (readarr[0] == 0x7f) {
-		if (!oddparity(readarr[1]))
-			msg_cdbg("RDID byte 1 parity violation. ");
-		id1 = (readarr[0] << 8) | readarr[1];
-		id2 = readarr[2];
-		if (bytes > 3) {
-			id2 <<= 8;
-			id2 |= readarr[3];
-		}
-	} else {
-		id1 = readarr[0];
-		id2 = (readarr[1] << 8) | readarr[2];
-	}
-
-	msg_cdbg("%s: id1 0x%02x, id2 0x%02x\n", __func__, id1, id2);
-
-	if (id1 == chip->manufacture_id && id2 == chip->model_id)
-		return 1;
-
-	/* Test if this is a pure vendor match. */
-	if (id1 == chip->manufacture_id && GENERIC_DEVICE_ID == chip->model_id)
-		return 1;
-
-	/* Test if there is any vendor ID. */
-	if (GENERIC_MANUF_ID == chip->manufacture_id && id1 != 0xff)
-		return 1;
-
-	return 0;
-}
-
-int probe_spi_rdid(struct flashctx *flash)
-{
-	return probe_spi_rdid_generic(flash, 3);
-}
-
-int probe_spi_rdid4(struct flashctx *flash)
-{
-	/* Some SPI controllers do not support commands with writecnt=1 and
-	 * readcnt=4.
-	 */
-	switch (flash->pgm->spi.type) {
+	res->len = ARRAY_SIZE(res->vals); // fill up to maximum if possible
+	/* Some SPI controllers do not support commands with writecnt=1 and readcnt=4. */
+	if (res->len != 3) { // FIXME
+		switch (flash->pgm->spi.type) {
 #if CONFIG_INTERNAL == 1
 #if defined(__i386__) || defined(__x86_64__)
-	case SPI_CONTROLLER_IT87XX:
-	case SPI_CONTROLLER_WBSIO:
-		msg_cinfo("4 byte RDID not supported on this SPI controller\n");
-		return 0;
-		break;
+		case SPI_CONTROLLER_IT87XX:
+		case SPI_CONTROLLER_WBSIO:
+			msg_cinfo("4 byte RDID not supported on this SPI controller\n");
+			return -1;
+			break;
 #endif
 #endif
-	default:
-		return probe_spi_rdid_generic(flash, 4);
+		default:
+			;//return probe_spi_rdid_generic(flash, 4);
+		}
 	}
 
-	return 0;
-}
-
-int probe_spi_rems(struct flashctx *flash)
-{
-	const struct flashchip *chip = flash->chip;
-	unsigned char readarr[JEDEC_REMS_INSIZE];
-	uint32_t id1, id2;
-
-	if (spi_rems(flash, readarr)) {
-		return 0;
-	}
-
-	id1 = readarr[0];
-	id2 = readarr[1];
-
-	msg_cdbg("%s: id1 0x%x, id2 0x%x\n", __func__, id1, id2);
-
-	if (id1 == chip->manufacture_id && id2 == chip->model_id)
-		return 1;
-
-	/* Test if this is a pure vendor match. */
-	if (id1 == chip->manufacture_id && GENERIC_DEVICE_ID == chip->model_id)
-		return 1;
-
-	/* Test if there is any vendor ID. */
-	if (GENERIC_MANUF_ID == chip->manufacture_id && id1 != 0xff)
-		return 1;
-
-	return 0;
-}
-
-int probe_spi_res1(struct flashctx *flash)
-{
-	static const unsigned char allff[] = {0xff, 0xff, 0xff};
-	static const unsigned char all00[] = {0x00, 0x00, 0x00};
-	unsigned char readarr[3];
-	uint32_t id2;
-
-	/* We only want one-byte RES if RDID and REMS are unusable. */
-
-	/* Check if RDID is usable and does not return 0xff 0xff 0xff or
-	 * 0x00 0x00 0x00. In that case, RES is pointless.
-	 */
-	if (!spi_rdid(flash, readarr, 3) && memcmp(readarr, allff, 3) &&
-	    memcmp(readarr, all00, 3)) {
-		msg_cdbg("Ignoring RES in favour of RDID.\n");
-		return 0;
-	}
-	/* Check if REMS is usable and does not return 0xff 0xff or
-	 * 0x00 0x00. In that case, RES is pointless.
-	 */
-	if (!spi_rems(flash, readarr) &&
-	    memcmp(readarr, allff, JEDEC_REMS_INSIZE) &&
-	    memcmp(readarr, all00, JEDEC_REMS_INSIZE)) {
-		msg_cdbg("Ignoring RES in favour of REMS.\n");
-		return 0;
-	}
-
-	if (spi_res(flash, readarr, 1)) {
-		return 0;
-	}
-
-	id2 = readarr[0];
-
-	msg_cdbg("%s: id 0x%x\n", __func__, id2);
-
-	if (id2 != flash->chip->model_id)
-		return 0;
-
-	return 1;
-}
-
-int probe_spi_res2(struct flashctx *flash)
-{
-	unsigned char readarr[2];
-	uint32_t id1, id2;
-
-	if (spi_res(flash, readarr, 2)) {
-		return 0;
-	}
-
-	id1 = readarr[0];
-	id2 = readarr[1];
-
-	msg_cdbg("%s: id1 0x%x, id2 0x%x\n", __func__, id1, id2);
-
-	if (id1 != flash->chip->manufacture_id || id2 != flash->chip->model_id)
-		return 0;
-
-	return 1;
-}
-
-int probe_spi_res3(struct flashctx *flash)
-{
-	unsigned char readarr[3];
-	uint32_t id1, id2;
-
-	if (spi_res(flash, readarr, 3)) {
-		return 0;
-	}
-
-	id1 = (readarr[0] << 8) | readarr[1];
-	id2 = readarr[2];
-
-	msg_cdbg("%s: id1 0x%x, id2 0x%x\n", __func__, id1, id2);
-
-	if (id1 != flash->chip->manufacture_id || id2 != flash->chip->model_id)
-		return 0;
-
-	return 1;
+	return spi_rdid(flash, res->vals, res->len);
 }
 
 /* Only used for some Atmel chips. */
-int probe_spi_at25f(struct flashctx *flash)
+int probe_spi_at25f(struct flashctx *flash, struct probe_res *res, unsigned int ignored, const struct probe *ignored2)
 {
-	static const unsigned char cmd[AT25F_RDID_OUTSIZE] = { AT25F_RDID };
-	unsigned char readarr[AT25F_RDID_INSIZE];
-	uint32_t id1;
-	uint32_t id2;
-
-	if (spi_send_command(flash, sizeof(cmd), sizeof(readarr), cmd, readarr))
-		return 0;
-
-	id1 = readarr[0];
-	id2 = readarr[1];
-
-	msg_cdbg("%s: id1 0x%02x, id2 0x%02x\n", __func__, id1, id2);
-
-	if (id1 == flash->chip->manufacture_id && id2 == flash->chip->model_id)
-		return 1;
-
-	return 0;
+	static const uint8_t cmd[AT25F_RDID_OUTSIZE] = { AT25F_RDID };
+	res->len = AT25F_RDID_INSIZE;
+	if (spi_send_command(flash, sizeof(cmd), res->len, cmd, res->vals) != 0)
+		return -1;
+	return test_for_valid_ids(res->vals, NULL, res->len) ? 1 : 0;
 }
 
 int spi_chip_erase_60(struct flashctx *flash)
