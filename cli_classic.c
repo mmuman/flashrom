@@ -369,8 +369,8 @@ int main(int argc, char *argv[])
 		ret = 1;
 		goto out;
 	}
-	if (layoutfile != NULL && !write_it) {
-		msg_gerr("Layout files are currently supported for write operations only.\n");
+	if (layoutfile != NULL && erase_it) {
+		msg_gerr("Layout files are currently not supported for erase operations.\n");
 		ret = 1;
 		goto out;
 	}
