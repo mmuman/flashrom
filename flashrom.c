@@ -630,7 +630,7 @@ static int compare_range(const uint8_t *wantbuf, const uint8_t *havebuf, unsigne
 		if (wantbuf[i] != havebuf[i]) {
 			/* Only print the first failure. */
 			if (!failcount++)
-				msg_cerr("FAILED at 0x%08x! Expected=0x%02x, Found=0x%02x,",
+				msg_cerr("Comparison failed at 0x%08x! Expected=0x%02x, Found=0x%02x,",
 					 start + i, wantbuf[i], havebuf[i]);
 		}
 	}
@@ -1215,6 +1215,37 @@ notfound:
 
 	/* Return position of matching chip. */
 	return chip - flashchips;
+}
+
+int verify_flash(struct flashctx *flash, uint8_t *buf)
+{
+	unsigned int total_size = flash->chip->total_size * 1024;
+	/* To be sure (e.g. if for some reason we use -i but still find no entry with
+	 * get_next_included_romentry()) set ret to fail in the beginning. */
+	int ret = 1;
+
+	msg_cinfo("Verifying... ");
+	romentry_t *l = get_next_included_romentry(0);
+	/* No included rom entries. Assume complete verify wanted. */
+	if (l == NULL) {
+		ret = verify_range(flash, buf, 0, total_size);
+	} else do {
+		unsigned int len = l->end - l->start + 1;
+		msg_gdbg2("\n\"%s\" 0x%08x - 0x%08x (%u B)... ", l->name, l->start, l->end, len);
+		if (verify_range(flash, buf + l->start, l->start, len)) {
+			ret = 1;
+			break;
+		}
+		msg_gdbg2("done. ");
+		ret = 0;
+		l = get_next_included_romentry(l->end + 1);
+	} while (l != NULL);
+
+	if (ret != 0)
+		msg_cinfo("FAILED.\n");
+	else
+		msg_cinfo("VERIFIED.\n");
+	return ret;
 }
 
 int read_buf_from_file(unsigned char *buf, unsigned long size, const char *filename, const char *size_msg)
@@ -2020,7 +2051,7 @@ int doit(struct flashctx *flash, int force, const char *filename, int read_it,
 		goto out;
 	}
 
-	if (write_it || verify_it) {
+	if (write_it || verify_it) { /* always true: erase and read already goto'ed */
 		if (read_buf_from_file(newcontents, size, filename, "the flash chip's size")) {
 			ret = 1;
 			goto out;
@@ -2046,7 +2077,7 @@ int doit(struct flashctx *flash, int force, const char *filename, int read_it,
 	 * preserved, but in that case we might perform unneeded erase which
 	 * takes time as well.
 	 */
-	if (read_all_first) {
+	if (read_all_first && write_it) {
 		msg_cinfo("Reading old flash chip contents... ");
 		if (flash->chip->read(flash, oldcontents, 0, size)) {
 			ret = 1;
@@ -2057,11 +2088,13 @@ int doit(struct flashctx *flash, int force, const char *filename, int read_it,
 	msg_cinfo("done.\n");
 
 	/* Build a new image taking the given layout into account. */
-	if (build_new_image(flash, read_all_first, oldcontents, newcontents)) {
-		msg_gerr("Could not prepare the data to be written due to problems with the layout,\n"
-			 "aborting.\n");
-		ret = 1;
-		goto out;
+	if (write_it || verify_it) { /* always true: erase and read already goto'ed */
+		if (build_new_image(flash, read_all_first, oldcontents, newcontents)) {
+			msg_gerr("Could not prepare the data to be written due to problems with the layout,\n"
+				 "aborting.\n");
+			ret = 1;
+			goto out;
+		}
 	}
 
 	// ////////////////////////////////////////////////////////////
@@ -2093,22 +2126,14 @@ int doit(struct flashctx *flash, int force, const char *filename, int read_it,
 
 	/* Verify only if we either did not try to write (verify operation) or actually changed something. */
 	if (verify_it && (!write_it || !all_skipped)) {
-		msg_cinfo("Verifying flash... ");
-
 		if (write_it) {
 			/* Work around chips which need some time to calm down. */
 			programmer_delay(1000*1000);
-			ret = verify_range(flash, newcontents, 0, size);
-			/* If we tried to write, and verification now fails, we
-			 * might have an emergency situation.
-			 */
-			if (ret)
-				emergency_help_message();
-		} else {
-			ret = compare_range(newcontents, oldcontents, 0, size);
 		}
-		if (!ret)
-			msg_cinfo("VERIFIED.\n");
+		ret = verify_flash(flash, newcontents);
+		/* If we tried to write, and verification now fails, we might have an emergency situation. */
+		if (write_it && (ret != 0))
+			emergency_help_message();
 	}
 
 out:
