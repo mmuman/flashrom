@@ -1285,6 +1285,7 @@ int read_buf_from_file(unsigned char *buf, unsigned long size, const char *filen
 			 "wanted %ld!\n", numbytes, size);
 		return 1;
 	}
+	msg_gdbg2("Read in %s sucessfully.\n", filename);
 	return 0;
 #endif
 }
@@ -2084,8 +2085,8 @@ int doit(struct flashctx *flash, int force, const char *filename, int read_it,
 			msg_cinfo("FAILED.\n");
 			goto out;
 		}
+		msg_cinfo("done.\n");
 	}
-	msg_cinfo("done.\n");
 
 	/* Build a new image taking the given layout into account. */
 	if (write_it || verify_it) { /* always true: erase and read already goto'ed */

@@ -380,9 +380,10 @@ int dummy_init(void)
 			 emu_persistent_image, (long)image_stat.st_size);
 		if (image_stat.st_size == emu_chip_size) {
 			msg_pdbg("matches.\n");
-			msg_pdbg("Reading %s\n", emu_persistent_image);
-			read_buf_from_file(flashchip_contents, emu_chip_size,
-					   emu_persistent_image, NULL);
+			msg_pdbg("Reading %s...", emu_persistent_image);
+			int ret = read_buf_from_file(flashchip_contents, emu_chip_size,
+						     emu_persistent_image, NULL);
+			msg_pdbg("%s.\n", (ret != 0) ? "failed" : "done");
 		} else {
 			msg_pdbg("doesn't match.\n");
 		}
