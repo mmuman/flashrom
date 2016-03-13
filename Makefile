@@ -928,6 +928,9 @@ ifneq ($(NEED_POSIX_SOCKETS), )
 ifeq ($(TARGET_OS), SunOS)
 LIBS += -lsocket -lnsl
 endif
+ifeq ($(TARGET_OS), Haiku)
+LIBS += -lnetwork
+endif
 endif
 
 ifneq ($(NEED_LIBPCI), )

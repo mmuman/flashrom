@@ -67,5 +67,8 @@
 	#else
 		#define __FLASHROM_OS__ "Linux"
 	#endif
+// Haiku
+#elif defined(__HAIKU__)
+#define __FLASHROM_OS__ "Haiku"
 #endif
 __FLASHROM_OS__
